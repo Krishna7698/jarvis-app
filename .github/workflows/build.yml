@@ -7,15 +7,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.24.5'
           channel: 'stable'
+          cache: true
 
       - name: Generate Android Files
         run: |
-          flutter create . --platforms=android --org com.jarvis.app
-          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n<uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n<application/' android/app/src/main/AndroidManifest.xml
+          flutter create . --platforms=android --org com.jarvis.app --project-name jarvis_assistant
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
+            sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.BLUETOOTH"\/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>\n    <application/' "$MANIFEST"
+          fi
+          echo "org.gradle.jvmargs=-Xmx4G" >> android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
 
       - name: Install dependencies
         run: flutter pub get
