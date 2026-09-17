@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,7 +8,6 @@ void main() => runApp(const JarvisApp());
 
 class JarvisApp extends StatelessWidget {
   const JarvisApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -32,7 +30,6 @@ class ChatMessage {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -41,17 +38,13 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
 
   final List<ChatMessage> _messages = [];
-
   String _provider = 'Groq (FREE)';
   String _apiKey = '';
   String _model = 'llama-3.3-70b-versatile';
   String _customUrl = '';
-
-  bool _isListening = false;
   bool _isLoading = false;
   bool _isSpeaking = false;
 
@@ -66,31 +59,31 @@ class _HomeScreenState extends State<HomeScreen>
       'url': 'https://api.groq.com/openai/v1/chat/completions',
       'model': 'llama-3.3-70b-versatile',
       'type': 'openai',
-      'hint': 'gsk_... (console.groq.com se free lo)',
+      'hint': 'gsk_... console.groq.com se free lo',
     },
     'Google Gemini (FREE)': {
       'url': 'https://generativelanguage.googleapis.com/v1beta/models/',
       'model': 'gemini-2.0-flash',
       'type': 'gemini',
-      'hint': 'AIza... (aistudio.google.com se free lo)',
+      'hint': 'AIza... aistudio.google.com se free lo',
     },
     'OpenRouter (FREE)': {
       'url': 'https://openrouter.ai/api/v1/chat/completions',
       'model': 'meta-llama/llama-3.3-70b-instruct:free',
       'type': 'openai',
-      'hint': 'sk-or-... (openrouter.ai se free lo)',
+      'hint': 'sk-or-... openrouter.ai se free lo',
     },
     'OpenAI (Paid)': {
       'url': 'https://api.openai.com/v1/chat/completions',
       'model': 'gpt-4o-mini',
       'type': 'openai',
-      'hint': 'sk-... (platform.openai.com)',
+      'hint': 'sk-... platform.openai.com',
     },
     'DeepSeek': {
       'url': 'https://api.deepseek.com/chat/completions',
       'model': 'deepseek-chat',
       'type': 'openai',
-      'hint': 'sk-... (platform.deepseek.com)',
+      'hint': 'sk-... platform.deepseek.com',
     },
     'Custom': {
       'url': '',
@@ -127,18 +120,16 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() {
       _provider = prefs.getString('provider') ?? 'Groq (FREE)';
       _apiKey = prefs.getString('api_key') ?? '';
-      _model = prefs.getString('model') ??
-          providers[_provider]!['model']!;
+      _model = prefs.getString('model') ?? providers[_provider]!['model']!;
       _customUrl = prefs.getString('custom_url') ?? '';
     });
     if (_apiKey.isEmpty) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _showSettings());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showSettings());
     }
   }
 
-  Future<void> _saveSettings(String provider, String key,
-      String model, String customUrl) async {
+  Future<void> _saveSettings(
+      String provider, String key, String model, String customUrl) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('provider', provider);
     await prefs.setString('api_key', key);
@@ -179,23 +170,19 @@ class _HomeScreenState extends State<HomeScreen>
                   items: providers.keys
                       .map((p) => DropdownMenuItem(
                           value: p,
-                          child: Text(p,
-                              style:
-                                  const TextStyle(fontSize: 13))))
+                          child: Text(p, style: const TextStyle(fontSize: 13))))
                       .toList(),
                   onChanged: (val) {
                     setDialogState(() {
                       selectedProvider = val!;
-                      modelController.text =
-                          providers[val]!['model']!;
+                      modelController.text = providers[val]!['model']!;
                     });
                   },
                 ),
                 const SizedBox(height: 8),
                 Text(
                   providers[selectedProvider]!['hint']!,
-                  style: const TextStyle(
-                      fontSize: 11, color: Colors.white54),
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -239,8 +226,7 @@ class _HomeScreenState extends State<HomeScreen>
                 );
                 Navigator.pop(ctx);
               },
-              child: const Text('Save',
-                  style: TextStyle(color: Colors.cyanAccent)),
+              child: const Text('Save', style: TextStyle(color: Colors.cyanAccent)),
             ),
           ],
         ),
@@ -248,11 +234,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Future<String> _callOpenAICompatible(
-      List<Map<String, String>> history) async {
-    final url = _provider == 'Custom'
-        ? _customUrl
-        : providers[_provider]!['url']!;
+  Future<String> _callOpenAICompatible(List<Map<String, String>> history) async {
+    final url = _provider == 'Custom' ? _customUrl : providers[_provider]!['url']!;
     final response = await http.post(
       Uri.parse(url),
       headers: {
@@ -275,8 +258,7 @@ class _HomeScreenState extends State<HomeScreen>
     throw Exception('API Error ${response.statusCode}');
   }
 
-  Future<String> _callGemini(
-      List<Map<String, String>> history) async {
+  Future<String> _callGemini(List<Map<String, String>> history) async {
     final url =
         '${providers[_provider]!['url']}$_model:generateContent?key=$_apiKey';
     final contents = history
@@ -301,8 +283,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
     if (response.statusCode == 200) {
       final data = jsonDecode(utf8.decode(response.bodyBytes));
-      return data['candidates'][0]['content']['parts'][0]['text']
-          as String;
+      return data['candidates'][0]['content']['parts'][0]['text'] as String;
     }
     throw Exception('API Error ${response.statusCode}');
   }
@@ -314,14 +295,12 @@ class _HomeScreenState extends State<HomeScreen>
       _showSettings();
       return;
     }
-
     _textController.clear();
     setState(() {
       _messages.add(ChatMessage(text, true));
       _isLoading = true;
     });
     _scrollToBottom();
-
     try {
       final history = _messages
           .map((m) => {
@@ -329,12 +308,9 @@ class _HomeScreenState extends State<HomeScreen>
                 'content': m.text,
               })
           .toList();
-
-      final String reply =
-          providers[_provider]!['type'] == 'gemini'
-              ? await _callGemini(history)
-              : await _callOpenAICompatible(history);
-
+      final String reply = providers[_provider]!['type'] == 'gemini'
+          ? await _callGemini(history)
+          : await _callOpenAICompatible(history);
       setState(() {
         _messages.add(ChatMessage(reply, false));
         _isLoading = false;
@@ -343,31 +319,10 @@ class _HomeScreenState extends State<HomeScreen>
       await _tts.speak(reply);
     } catch (e) {
       setState(() {
-        _messages.add(ChatMessage(
-            'Error: $e\nAPI key ya provider check karo.', false));
+        _messages.add(ChatMessage('Error: $e', false));
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _toggleListening() async {
-    if (_isListening) {
-      await _speech.stop();
-      setState(() => _isListening = false);
-      return;
-    }
-    final available = await _speech.initialize();
-    if (!available) return;
-    setState(() => _isListening = true);
-    _speech.listen(
-      localeId: 'hi_IN',
-      onResult: (result) {
-        if (result.finalResult) {
-          setState(() => _isListening = false);
-          _sendMessage(result.recognizedWords);
-        }
-      },
-    );
   }
 
   void _scrollToBottom() {
@@ -395,13 +350,11 @@ class _HomeScreenState extends State<HomeScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         title: const Text('J.A.R.V.I.S',
-            style: TextStyle(
-                letterSpacing: 4, color: Colors.cyanAccent)),
+            style: TextStyle(letterSpacing: 4, color: Colors.cyanAccent)),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings,
-                color: Colors.cyanAccent),
+            icon: const Icon(Icons.settings, color: Colors.cyanAccent),
             onPressed: _showSettings,
           ),
         ],
@@ -421,29 +374,18 @@ class _HomeScreenState extends State<HomeScreen>
                     gradient: RadialGradient(
                       colors: _isSpeaking
                           ? [Colors.pinkAccent, Colors.purple]
-                          : _isListening
-                              ? [
-                                  Colors.greenAccent,
-                                  Colors.teal
-                                ]
-                              : [
-                                  Colors.cyanAccent,
-                                  Colors.blue.shade900
-                                ],
+                          : [Colors.cyanAccent, Colors.blue.shade900],
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (_isSpeaking
-                                ? Colors.pinkAccent
-                                : Colors.cyanAccent)
+                        color: (_isSpeaking ? Colors.pinkAccent : Colors.cyanAccent)
                             .withOpacity(0.5),
                         blurRadius: 40,
                         spreadRadius: 8,
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.face_3,
-                      size: 55, color: Colors.white),
+                  child: const Icon(Icons.face_3, size: 55, color: Colors.white),
                 ),
               ),
             ),
@@ -456,25 +398,19 @@ class _HomeScreenState extends State<HomeScreen>
               itemBuilder: (context, index) {
                 final msg = _messages[index];
                 return Align(
-                  alignment: msg.isUser
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
+                  alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
-                    margin:
-                        const EdgeInsets.symmetric(vertical: 4),
+                    margin: const EdgeInsets.symmetric(vertical: 4),
                     padding: const EdgeInsets.all(12),
                     constraints: BoxConstraints(
-                        maxWidth:
-                            MediaQuery.of(context).size.width *
-                                0.75),
+                        maxWidth: MediaQuery.of(context).size.width * 0.75),
                     decoration: BoxDecoration(
                       color: msg.isUser
                           ? Colors.cyan.shade800
                           : const Color(0xFF1D1E33),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(msg.text,
-                        style: const TextStyle(fontSize: 15)),
+                    child: Text(msg.text, style: const TextStyle(fontSize: 15)),
                   ),
                 );
               },
@@ -483,8 +419,7 @@ class _HomeScreenState extends State<HomeScreen>
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(8),
-              child: CircularProgressIndicator(
-                  color: Colors.cyanAccent),
+              child: CircularProgressIndicator(color: Colors.cyanAccent),
             ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
@@ -494,8 +429,7 @@ class _HomeScreenState extends State<HomeScreen>
                   child: TextField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText:
-                          'Message likho ya mic dabao...',
+                      hintText: 'Message likho...',
                       filled: true,
                       fillColor: const Color(0xFF1D1E33),
                       border: OutlineInputBorder(
@@ -503,8 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
                         borderSide: BorderSide.none,
                       ),
                       contentPadding:
-                          const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 10),
+                          const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     ),
                     onSubmitted: _sendMessage,
                   ),
@@ -512,25 +445,10 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(width: 8),
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: _isListening
-                      ? Colors.redAccent
-                      : Colors.cyanAccent,
-                  child: IconButton(
-                    icon: Icon(
-                        _isListening ? Icons.stop : Icons.mic,
-                        color: Colors.black),
-                    onPressed: _toggleListening,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  radius: 24,
                   backgroundColor: Colors.cyanAccent,
                   child: IconButton(
-                    icon: const Icon(Icons.send,
-                        color: Colors.black),
-                    onPressed: () =>
-                        _sendMessage(_textController.text),
+                    icon: const Icon(Icons.send, color: Colors.black),
+                    onPressed: () => _sendMessage(_textController.text),
                   ),
                 ),
               ],
