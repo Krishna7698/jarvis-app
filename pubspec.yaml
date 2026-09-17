@@ -1,18 +1,17 @@
 name: jarvis_assistant
-description: AI Assistant with animated avatar
+description: AI Assistant with voice output
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.0
-  speech_to_text: ^7.0.0
-  flutter_tts: ^4.0.2
-  shared_preferences: ^2.2.2
+  http: 1.2.2
+  flutter_tts: 4.0.2
+  shared_preferences: 2.2.3
 
 dev_dependencies:
   flutter_test:
@@ -20,4 +19,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
