@@ -3,29 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() => runApp(const SuhanaApp());
 
 class SuhanaApp extends StatelessWidget {
   const SuhanaApp({super.key});
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Suhana',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF070B18),
-      ),
-      home: const Home(),
-    );
-  }
+  Widget build(BuildContext c) => MaterialApp(
+        title: 'Suhana',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF070B18)),
+        home: const Home(),
+      );
 }
 
 class Msg {
-  final String text;
-  final bool me;
-  final bool info;
-  Msg(this.text, this.me, {this.info = false});
+  final String t; final bool me; final bool info;
+  Msg(this.t, this.me, {this.info = false});
 }
 
 class Home extends StatefulWidget {
@@ -35,368 +30,221 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
-  final _input = TextEditingController();
-  final _scroll = ScrollController();
+  final _in = TextEditingController();
+  final _sc = ScrollController();
   final _tts = FlutterTts();
   final _msgs = <Msg>[];
 
   String _key = '';
-  String _model = '';
-  bool _loading = false;
-  bool _speaking = false;
+  String _model = 'gemini-1.5-pro';
+  bool _busy = false;
+  bool _talk = false;
 
   late AnimationController _pulse;
 
   static const _sys =
-      'You are Suhana, a friendly female AI assistant. Reply in the same language '
-      'the user speaks (Hindi, Hinglish or English). Keep answers short, warm and useful. '
-      'Do not use markdown. If unsure about a fact, say so.';
+      'You are Suhana, a beautiful, friendly female AI assistant. '
+      'Reply naturally in Hinglish, Hindi or English depending on user. '
+      'Keep it short (2-3 lines max), sweet, slightly playful. No markdown like * or #. '
+      'Always respond as a real girl talking to a friend.';
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
+    _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
     _setupTts();
     _load();
   }
 
   @override
-  void dispose() {
-    _pulse.dispose();
-    _tts.stop();
-    _input.dispose();
-    _scroll.dispose();
-    super.dispose();
-  }
+  void dispose() { _pulse.dispose(); _tts.stop(); _in.dispose(); _sc.dispose(); super.dispose(); }
 
   Future<void> _setupTts() async {
-    await _tts.setSpeechRate(0.47);
-    await _tts.setPitch(1.18);
-    await _tts.setVolume(1);
-    _tts.setStartHandler(() {
-      if (mounted) setState(() => _speaking = true);
-    });
-    _tts.setCompletionHandler(() {
-      if (mounted) setState(() => _speaking = false);
-    });
-    _tts.setCancelHandler(() {
-      if (mounted) setState(() => _speaking = false);
-    });
+    await _tts.setSpeechRate(0.48);
+    await _tts.setPitch(1.12);
+    await _tts.setVolume(1.0);
+    await _tts.setLanguage('hi-IN');
+    _tts.setStartHandler(() { if (mounted) setState(() => _talk = true); });
+    _tts.setCompletionHandler(() { if (mounted) setState(() => _talk = false); });
   }
 
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     setState(() {
-      _key = p.getString('key') ?? '';
-      _model = p.getString('model') ?? '';
+      _key = p.getString('gkey') ?? '';
+      _model = p.getString('model') ?? 'gemini-1.5-pro';
     });
-    if (_key.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _settings());
-    } else if (_model.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _pickModel());
-    }
+    if (_key.isEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _settings());
   }
 
-  Future<void> _save(String key, String model) async {
+  Future<void> _save(String k, String m) async {
     final p = await SharedPreferences.getInstance();
-    await p.setString('key', key);
-    if (model.isNotEmpty) await p.setString('model', model);
+    await p.setString('gkey', k);
+    await p.setString('model', m.isEmpty ? 'gemini-1.5-pro' : m);
+    if (!mounted) return;
     setState(() {
-      _key = key;
-      if (model.isNotEmpty) _model = model;
+      _key = k;
+      _model = m.isEmpty ? 'gemini-1.5-pro' : m;
     });
   }
 
-  void _info(String t) {
-    setState(() => _msgs.add(Msg(t, false, info: true)));
-    _goDown();
+  void _info(String s) {
+    setState(() => _msgs.add(Msg(s, false, info: true)));
+    _down();
   }
 
-  void _goDown() {
-    Future.delayed(const Duration(milliseconds: 80), () {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-        );
-      }
+  void _down() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_sc.hasClients) _sc.animateTo(_sc.position.maxScrollExtent, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     });
   }
 
-  Future<List<String>> _listModels() async {
-    final res = await http.get(
-      Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
-      ),
-      headers: {'x-goog-api-key': _key},
-    ).timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) {
-      throw Exception('Models list nahi mil payi. Key check karo.');
-    }
-    final data = jsonDecode(utf8.decode(res.bodyBytes));
-    final List models = (data['models'] as List?) ?? [];
-    final names = <String>[];
-    for (final m in models) {
-      final methods = (m['supportedGenerationMethods'] as List?) ?? [];
-      if (!methods.contains('generateContent')) continue;
-      var n = '${m['name'] ?? ''}';
-      if (n.startsWith('models/')) n = n.substring(7);
-      final lower = n.toLowerCase();
-      if (lower.contains('embedding') ||
-          lower.contains('imagen') ||
-          lower.contains('aqa') ||
-          lower.contains('veo') ||
-          lower.contains('robotics')) {
-        continue;
+  List<Map<String, String>> _hist() {
+    final h = _msgs.where((m) => !m.info).toList();
+    final r = h.length > 14 ? h.sublist(h.length - 14) : h;
+    return r.map((m) => {'role': m.me ? 'user' : 'model', 'text': m.t}).toList();
+  }
+
+  Future<String?> _geminiCall(String user, List<Map<String, String>> hist) async {
+    final contents = hist.map((e) => {'role': e['role'] == 'model' ? 'model' : 'user', 'parts': [{'text': e['text']!}]}).toList();
+    contents.add({'role': 'user', 'parts': [{'text': user}]});
+
+    final body = {
+      'system_instruction': {'parts': [{'text': _sys}]},
+      'contents': contents,
+      'generationConfig': {'temperature': 0.7},
+    };
+
+    final res = await http.post(
+      Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$_key'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    ).timeout(const Duration(seconds: 55));
+
+    if (res.statusCode == 200) {
+      final d = jsonDecode(utf8.decode(res.bodyBytes));
+      final c = d['candidates'] as List?;
+      if (c != null && c.isNotEmpty) {
+        final parts = (c[0]['content']?['parts'] as List?) ?? [];
+        final txt = parts.map((p) => '${p['text'] ?? ''}').join().trim();
+        if (txt.isNotEmpty) return txt;
       }
-      names.add(n);
+      return null;
     }
-    return names;
+
+    // Error mapping
+    final errMsg = utf8.decode(res.bodyBytes, allowMalformed: true);
+    if (res.statusCode == 404) return '⚠️ Model $_model available nahi. Tumhari key sahi hai? Check Settings.';
+    if (res.statusCode == 429) return '⚠️ Rate limit. Free Gemini quota khatam. 30 sec baad ek message bhejo.';
+    if (res.statusCode == 401 || res.statusCode == 403) return '⚠️ API key galat. Settings me sahi key daalo. Key screenshot mat dikhana.';
+    if (res.statusCode == 503 || res.statusCode == 500) return '⚠️ Gemini server busy. 30 sec baad try karo.';
+    return '⚠️ Error ${res.statusCode}: ${errMsg.isNotEmpty ? errMsg : 'Unknown error'}';
   }
 
-  Future<String> _bestModel() async {
-    final all = await _listModels();
-    if (all.isEmpty) throw Exception('No chat models available');
-    // Rank models: flash > lite, latest > stable > preview
-    int score(String n) {
-      final s = n.toLowerCase();
-      var v = 100;
-      if (s.contains('flash') && !s.contains('lite')) v -= 50;
-      if (s.contains('pro') && !s.contains('lite')) v -= 30;
-      if (s.contains('latest')) v -= 20;
-      if (s.contains('lite')) v += 20;
-      if (s.contains('preview') || s.contains('exp')) v += 30;
-      if (s.contains('1.5')) v += 10;
-      return v;
-    }
-    final sorted = all.toList()
-      ..sort((a, b) => score(a).compareTo(score(b)));
-    return sorted.first;
+  Future<String?> _ask(String user) async {
+    final reply = await _geminiCall(user, _hist());
+    return reply;
   }
 
-  Future<void> _pickModel() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Colors.cyanAccent),
-      ),
-    );
-    try {
-      final best = await _bestModel();
-      if (!mounted) return;
-      Navigator.pop(context);
-      final p = await SharedPreferences.getInstance();
-      await p.setString('model', best);
-      setState(() => _model = best);
-      _info('Auto-selected model: $best');
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      _settings();
-      _info(e.toString());
+  // App actions
+  Future<void> _handleAppAction(String text) async {
+    final lower = text.toLowerCase();
+    if (lower.contains('youtube') || lower.contains('youtube kholo')) {
+      await launchUrl(Uri.parse('https://youtube.com'), mode: LaunchMode.externalApplication);
+      setState(() => _msgs.add(Msg('YouTube open kar rahi hoon! 🔥', false)));
+    } else if (lower.contains('whatsapp') || lower.contains('whatsapp kholo')) {
+      await launchUrl(Uri.parse('https://whatsapp.com'), mode: LaunchMode.externalApplication);
+      setState(() => _msgs.add(Msg('WhatsApp open ho gaya! 📱', false)));
+    } else if (lower.contains('instagram') || lower.contains('instagram kholo')) {
+      await launchUrl(Uri.parse('https://instagram.com'), mode: LaunchMode.externalApplication);
+      setState(() => _msgs.add(Msg('Instagram khul gaya! ✨', false)));
+    } else if (lower.contains('google par') || lower.contains('google search') || lower.contains('search karo')) {
+      final q = text.replaceAll(RegExp(r'google par|search karo|search|google pe|google'), '').trim();
+      final url = Uri.parse('https://www.google.com/search?q=${Uri.encodeComponent(q.isEmpty ? 'Suhana' : q)}');
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+      setState(() => _msgs.add(Msg('Google par "$q" search kar diya! 🔍', false)));
+    } else {
+      // Nothing to open
     }
   }
 
-  String _err(http.Response r) {
-    var msg = '';
-    try {
-      final d = jsonDecode(utf8.decode(r.bodyBytes));
-      final e = d is Map ? d['error'] : null;
-      if (e is Map) msg = '${e['message'] ?? ''}';
-    } catch (_) {}
-    if (r.statusCode == 404) return 'Model tumhari key par available nahi hai.';
-    if (r.statusCode == 401 || r.statusCode == 403) {
-      return 'API key galat/expired. Nayi key banao. Key screenshot me mat dikhana.';
-    }
-    if (r.statusCode == 429) return 'Rate limit. 30 sec baad try karo.';
-    if (r.statusCode == 503) return 'Server busy. Thodi der baad.';
-    return 'HTTP ${r.statusCode}: ${msg.isEmpty ? 'Server error' : msg}';
-  }
-
-  Future<String> _ask(String user) async {
-    final hist = <Map<String, dynamic>>[];
-    for (final m in _msgs.where((x) => !x.info).take(16)) {
-      hist.add({
-        'role': m.me ? 'user' : 'model',
-        'parts': [
-          {'text': m.text}
-        ],
-      });
-    }
-    hist.add({
-      'role': 'user',
-      'parts': [
-        {'text': user}
-      ],
-    });
-
-    Future<http.Response> call(String model) {
-      return http
-          .post(
-            Uri.parse(
-              'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
-            ),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': _key,
-            },
-            body: jsonEncode({
-              'system_instruction': {
-                'parts': [
-                  {'text': _sys}
-                ]
-              },
-              'contents': hist,
-              'generationConfig': {'temperature': 0.7},
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
-    }
-
-    var res = await call(_model);
-    if (res.statusCode != 200) {
-      // Try to find a working model
-      final p = await SharedPreferences.getInstance();
-      String? chosen;
-      try {
-        final best = await _bestModel();
-        if (best != _model) {
-          res = await call(best);
-          chosen = best;
-        }
-      } catch (_) {}
-      if (res.statusCode != 200) {
-        await p.remove('model');
-        if (mounted) setState(() => _model = '');
-        throw Exception(_err(res));
-      }
-      if (chosen != null) {
-        await p.setString('model', chosen);
-        if (mounted) setState(() => _model = chosen!);
-        _info('Model auto-switch: $chosen');
-      }
-    }
-    final d = jsonDecode(utf8.decode(res.bodyBytes));
-    final cands = d['candidates'] as List?;
-    if (cands == null || cands.isEmpty) {
-      throw Exception('Suhana jawab nahi de paayi. Dobara try karo.');
-    }
-    final parts = (cands[0]['content']?['parts'] as List?) ?? [];
-    final text = parts.map((p) => '${p['text'] ?? ''}').join().trim();
-    if (text.isEmpty) throw Exception('Khali jawab aaya.');
-    return text;
-  }
-
-  Future<void> _speak(String text) async {
-    var t = text.replaceAll(RegExp(r'[*#`>~|]'), ' ');
+  Future<void> _speak(String s) async {
+    var t = s.replaceAll(RegExp(r'[*#`_>]|⚠️|🔥|✨|📱|🔍'), ' ');
     t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (t.isEmpty) return;
-    final hindi = RegExp(r'[\u0900-\u097F]').hasMatch(t);
-    try {
-      await _tts.stop();
-      await _tts.setLanguage(hindi ? 'hi-IN' : 'en-IN');
-      await _tts.speak(t);
-    } catch (_) {}
+    final hi = RegExp(r'[\u0900-\u097F]').hasMatch(t);
+    try { await _tts.setLanguage(hi ? 'hi-IN' : 'en-IN'); await _tts.speak(t); } catch (_) {}
   }
 
   Future<void> _send(String text) async {
     text = text.trim();
-    if (text.isEmpty || _loading) return;
-    if (_key.isEmpty || _model.isEmpty) {
-      if (_model.isEmpty) _pickModel();
-      else _settings();
+    if (text.isEmpty || _busy) return;
+
+    // Check for app commands first
+    final lower = text.toLowerCase();
+    if (lower.contains('youtube') || lower.contains('whatsapp') || lower.contains('instagram') ||
+        lower.contains('google par') || lower.contains('search karo') || lower.contains('khol')) {
+      await _handleAppAction(text);
       return;
     }
-    _input.clear();
-    setState(() {
-      _msgs.add(Msg(text, true));
-      _loading = true;
-    });
-    _goDown();
+
+    if (_key.isEmpty) {
+      _settings();
+      return;
+    }
+
+    _in.clear();
+    setState(() => _msgs.add(Msg(text, true)));
+    _down();
+    setState(() => _busy = true);
+
     try {
       final reply = await _ask(text);
       if (!mounted) return;
       setState(() {
-        _msgs.add(Msg(reply, false));
-        _loading = false;
+        _msgs.add(Msg(reply ?? 'Hmm... kuch galat ho gaya.', false));
+        _busy = false;
       });
-      _goDown();
-      await _speak(reply);
+      _down();
+      if (reply != null && !reply.startsWith('⚠️')) {
+        await _speak(reply);
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      _info(e.toString().replaceFirst('Exception: ', ''));
+      setState(() => _busy = false);
+      setState(() => _msgs.add(Msg('⚠️ Error: $e', false)));
     }
   }
 
   void _settings() {
-    final k = TextEditingController(text: _key);
-    final m = TextEditingController(text: _model);
+    final g = TextEditingController(text: _key);
+    final m = TextEditingController(text: 'gemini-1.5-pro'); // Fixed!
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF12182B),
-        title: const Text('Suhana Settings',
-            style: TextStyle(color: Colors.cyanAccent)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: k,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Gemini API Key',
-                  hintText: 'AIza... (aistudio.google.com)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: m,
-                decoration: const InputDecoration(
-                  labelText: 'Model (khali chhodo for auto)',
-                  hintText: 'Auto-pick',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.search),
-                  label: const Text('Auto-pick best model'),
-                  onPressed: () async {
-                    if (k.text.trim().isEmpty) {
-                      _info('Pehle API Key paste karo.');
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    await _save(k.text.trim(), '');
-                    _pickModel();
-                  },
-                ),
-              ),
-            ],
+        title: const Text('Suhana Settings', style: TextStyle(color: Colors.cyanAccent, fontSize: 20)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: g,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Gemini API Key',
+              hintText: 'AIza... (aistudio.google.com)',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          Text('Model:', style: TextStyle(color: Colors.white54)),
+          Text('gemini-1.5-pro (Fixed like MYRAA)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ]),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
-              _save(k.text.trim(), m.text.trim());
+              _save(g.text.trim(), m.text.trim());
               Navigator.pop(ctx);
             },
-            child: const Text('Save',
-                style: TextStyle(color: Colors.cyanAccent)),
+            child: const Text('Save', style: TextStyle(color: Colors.cyanAccent)),
           ),
         ],
       ),
@@ -405,143 +253,83 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final ready = _key.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text('SUHANA',
-            style: TextStyle(letterSpacing: 5, color: Colors.cyanAccent)),
         centerTitle: true,
+        title: const Text('SUHANA', style: TextStyle(letterSpacing: 8, color: Colors.cyanAccent, fontSize: 22)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.white38),
-            onPressed: () => setState(_msgs.clear),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.cyanAccent),
-            onPressed: _settings,
-          ),
+          IconButton(icon: const Icon(Icons.delete_outline, color: Colors.white38), onPressed: () => setState(_msgs.clear)),
+          IconButton(icon: const Icon(Icons.settings, color: Colors.cyanAccent), onPressed: _settings),
         ],
       ),
-      body: Column(
-        children: [
-          ScaleTransition(
-            scale: Tween(begin: 0.94, end: 1.06).animate(
-              CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+      body: Column(children: [
+        const SizedBox(height: 8),
+        ScaleTransition(
+          scale: Tween(begin: 0.94, end: 1.06).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
+          child: Container(
+            width: 125,
+            height: 125,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(colors: _talk ? [Colors.pinkAccent, Colors.deepPurple] : [Colors.cyanAccent, Colors.indigo.shade900]),
+              boxShadow: [BoxShadow(color: (_talk ? Colors.pinkAccent : Colors.cyanAccent).withOpacity(0.45), blurRadius: 30, spreadRadius: 8)],
             ),
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: _speaking
-                      ? [Colors.pinkAccent, Colors.purple]
-                      : [Colors.cyanAccent, Colors.indigo.shade900],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (_speaking
-                            ? Colors.pinkAccent
-                            : Colors.cyanAccent)
-                        .withOpacity(0.45),
-                    blurRadius: 28,
-                    spreadRadius: 6,
+            child: const Icon(Icons.face_3, size: 60, color: Colors.white70),
+          ),
+        ),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(ready ? 'Suhana • gemini-1.5-pro' : 'Setup pending', style: const TextStyle(color: Colors.white54, fontSize: 12))),
+        Expanded(
+          child: ListView.builder(
+            controller: _sc,
+            padding: const EdgeInsets.all(14),
+            itemCount: _msgs.length,
+            itemBuilder: (_, i) {
+              final msg = _msgs[i];
+              return Align(
+                alignment: msg.me ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 3),
+                  padding: const EdgeInsets.all(12),
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+                  decoration: BoxDecoration(
+                    color: msg.info ? Colors.orange.withOpacity(0.1)
+                        : msg.me ? Colors.cyan.shade800
+                        : const Color(0xFF12182B),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                ],
+                  child: SelectableText(msg.t, style: TextStyle(color: msg.info ? Colors.orange.shade200 : Colors.white, fontSize: 15)),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_busy) const Padding(padding: EdgeInsets.all(6), child: CircularProgressIndicator(color: Colors.cyanAccent)),
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 18),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _in,
+                textInputAction: TextInputAction.send,
+                decoration: InputDecoration(
+                  hintText: 'Suhana se kuch bhi poochho...',
+                  filled: true,
+                  fillColor: const Color(0xFF12182B),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+                ),
+                onSubmitted: _send,
               ),
-              child: const Icon(Icons.face_3, size: 58, color: Colors.white),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              _speaking
-                  ? 'Suhana bol rahi hai...'
-                  : _loading
-                      ? 'Suhana soch rahi hai...'
-                      : _model.isEmpty
-                          ? 'Setup pending'
-                          : 'Gemini • $_model',
-              style: const TextStyle(fontSize: 12, color: Colors.white54),
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: Colors.cyanAccent,
+              child: IconButton(icon: const Icon(Icons.send, color: Colors.black87, size: 22), onPressed: () => _send(_in.text)),
             ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              controller: _scroll,
-              padding: const EdgeInsets.all(12),
-              itemCount: _msgs.length,
-              itemBuilder: (_, i) {
-                final m = _msgs[i];
-                return Align(
-                  alignment: m.me
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
-                    constraints: BoxConstraints(
-                        maxWidth:
-                            MediaQuery.of(context).size.width * 0.8),
-                    decoration: BoxDecoration(
-                      color: m.info
-                          ? Colors.orange.withOpacity(0.12)
-                          : m.me
-                              ? Colors.cyan.shade800
-                              : const Color(0xFF12182B),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: SelectableText(
-                      m.text,
-                      style: TextStyle(
-                        color:
-                            m.info ? Colors.orange.shade200 : Colors.white,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(6),
-              child: CircularProgressIndicator(color: Colors.cyanAccent),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _input,
-                    textInputAction: TextInputAction.send,
-                    decoration: InputDecoration(
-                      hintText: 'Suhana se baat karo...',
-                      filled: true,
-                      fillColor: const Color(0xFF12182B),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(28),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onSubmitted: _send,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  backgroundColor: Colors.cyanAccent,
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.black),
-                    onPressed: () => _send(_input.text),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+          ]),
+        ),
+      ]),
     );
   }
 }
