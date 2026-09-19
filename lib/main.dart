@@ -41,7 +41,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   final _msgs = <Msg>[];
 
   String _key = '';
-  String _model = 'gemini-2.5-flash';
+  String _model = '';
   bool _loading = false;
   bool _speaking = false;
 
@@ -50,7 +50,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   static const _sys =
       'You are Suhana, a friendly female AI assistant. Reply in the same language '
       'the user speaks (Hindi, Hinglish or English). Keep answers short, warm and useful. '
-      'Do not use markdown. If you are not sure about live/latest facts, say so clearly.';
+      'Do not use markdown. If unsure about a fact, say so.';
 
   @override
   void initState() {
@@ -91,20 +91,22 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     final p = await SharedPreferences.getInstance();
     setState(() {
       _key = p.getString('key') ?? '';
-      _model = p.getString('model') ?? 'gemini-2.5-flash';
+      _model = p.getString('model') ?? '';
     });
     if (_key.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _settings());
+    } else if (_model.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pickModel());
     }
   }
 
   Future<void> _save(String key, String model) async {
     final p = await SharedPreferences.getInstance();
     await p.setString('key', key);
-    await p.setString('model', model);
+    if (model.isNotEmpty) await p.setString('model', model);
     setState(() {
       _key = key;
-      _model = model;
+      if (model.isNotEmpty) _model = model;
     });
   }
 
@@ -125,6 +127,81 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     });
   }
 
+  Future<List<String>> _listModels() async {
+    final res = await http.get(
+      Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+      ),
+      headers: {'x-goog-api-key': _key},
+    ).timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) {
+      throw Exception('Models list nahi mil payi. Key check karo.');
+    }
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    final List models = (data['models'] as List?) ?? [];
+    final names = <String>[];
+    for (final m in models) {
+      final methods = (m['supportedGenerationMethods'] as List?) ?? [];
+      if (!methods.contains('generateContent')) continue;
+      var n = '${m['name'] ?? ''}';
+      if (n.startsWith('models/')) n = n.substring(7);
+      final lower = n.toLowerCase();
+      if (lower.contains('embedding') ||
+          lower.contains('imagen') ||
+          lower.contains('aqa') ||
+          lower.contains('veo') ||
+          lower.contains('robotics')) {
+        continue;
+      }
+      names.add(n);
+    }
+    return names;
+  }
+
+  Future<String> _bestModel() async {
+    final all = await _listModels();
+    if (all.isEmpty) throw Exception('No chat models available');
+    // Rank models: flash > lite, latest > stable > preview
+    int score(String n) {
+      final s = n.toLowerCase();
+      var v = 100;
+      if (s.contains('flash') && !s.contains('lite')) v -= 50;
+      if (s.contains('pro') && !s.contains('lite')) v -= 30;
+      if (s.contains('latest')) v -= 20;
+      if (s.contains('lite')) v += 20;
+      if (s.contains('preview') || s.contains('exp')) v += 30;
+      if (s.contains('1.5')) v += 10;
+      return v;
+    }
+    final sorted = all.toList()
+      ..sort((a, b) => score(a).compareTo(score(b)));
+    return sorted.first;
+  }
+
+  Future<void> _pickModel() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent),
+      ),
+    );
+    try {
+      final best = await _bestModel();
+      if (!mounted) return;
+      Navigator.pop(context);
+      final p = await SharedPreferences.getInstance();
+      await p.setString('model', best);
+      setState(() => _model = best);
+      _info('Auto-selected model: $best');
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      _settings();
+      _info(e.toString());
+    }
+  }
+
   String _err(http.Response r) {
     var msg = '';
     try {
@@ -132,17 +209,13 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
       final e = d is Map ? d['error'] : null;
       if (e is Map) msg = '${e['message'] ?? ''}';
     } catch (_) {}
-    if (msg.isEmpty) msg = 'Server error';
-    if (r.statusCode == 404) {
-      return 'Model nahi mila. Settings me gemini-2.5-flash try karo.';
-    }
+    if (r.statusCode == 404) return 'Model tumhari key par available nahi hai.';
     if (r.statusCode == 401 || r.statusCode == 403) {
-      return 'API key galat/expired. Nayi key daalo. Key screenshot me mat dikhana.';
+      return 'API key galat/expired. Nayi key banao. Key screenshot me mat dikhana.';
     }
-    if (r.statusCode == 429 || r.statusCode == 503) {
-      return 'Gemini busy/limit. 30 sec baad try karo.';
-    }
-    return 'HTTP ${r.statusCode}: $msg';
+    if (r.statusCode == 429) return 'Rate limit. 30 sec baad try karo.';
+    if (r.statusCode == 503) return 'Server busy. Thodi der baad.';
+    return 'HTTP ${r.statusCode}: ${msg.isEmpty ? 'Server error' : msg}';
   }
 
   Future<String> _ask(String user) async {
@@ -186,20 +259,28 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     }
 
     var res = await call(_model);
-    if (res.statusCode == 404) {
-      for (final alt in ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash']) {
-        if (alt == _model) continue;
-        res = await call(alt);
-        if (res.statusCode == 200) {
-          setState(() => _model = alt);
-          final p = await SharedPreferences.getInstance();
-          await p.setString('model', alt);
-          _info('Model switch: $alt');
-          break;
+    if (res.statusCode != 200) {
+      // Try to find a working model
+      final p = await SharedPreferences.getInstance();
+      String? chosen;
+      try {
+        final best = await _bestModel();
+        if (best != _model) {
+          res = await call(best);
+          chosen = best;
         }
+      } catch (_) {}
+      if (res.statusCode != 200) {
+        await p.remove('model');
+        if (mounted) setState(() => _model = '');
+        throw Exception(_err(res));
+      }
+      if (chosen != null) {
+        await p.setString('model', chosen);
+        if (mounted) setState(() => _model = chosen!);
+        _info('Model auto-switch: $chosen');
       }
     }
-    if (res.statusCode != 200) throw Exception(_err(res));
     final d = jsonDecode(utf8.decode(res.bodyBytes));
     final cands = d['candidates'] as List?;
     if (cands == null || cands.isEmpty) {
@@ -226,8 +307,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   Future<void> _send(String text) async {
     text = text.trim();
     if (text.isEmpty || _loading) return;
-    if (_key.isEmpty) {
-      _settings();
+    if (_key.isEmpty || _model.isEmpty) {
+      if (_model.isEmpty) _pickModel();
+      else _settings();
       return;
     }
     _input.clear();
@@ -246,6 +328,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
       _goDown();
       await _speak(reply);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
       _info(e.toString().replaceFirst('Exception: ', ''));
     }
@@ -260,28 +343,47 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         backgroundColor: const Color(0xFF12182B),
         title: const Text('Suhana Settings',
             style: TextStyle(color: Colors.cyanAccent)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: k,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Gemini API Key',
-                hintText: 'AIza...  (aistudio.google.com)',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: k,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Gemini API Key',
+                  hintText: 'AIza... (aistudio.google.com)',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: m,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                hintText: 'gemini-2.5-flash',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: m,
+                decoration: const InputDecoration(
+                  labelText: 'Model (khali chhodo for auto)',
+                  hintText: 'Auto-pick',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.search),
+                  label: const Text('Auto-pick best model'),
+                  onPressed: () async {
+                    if (k.text.trim().isEmpty) {
+                      _info('Pehle API Key paste karo.');
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    await _save(k.text.trim(), '');
+                    _pickModel();
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -290,9 +392,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
           ),
           TextButton(
             onPressed: () {
-              _save(k.text.trim(), m.text.trim().isEmpty
-                  ? 'gemini-2.5-flash'
-                  : m.text.trim());
+              _save(k.text.trim(), m.text.trim());
               Navigator.pop(ctx);
             },
             child: const Text('Save',
@@ -340,7 +440,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: (_speaking ? Colors.pinkAccent : Colors.cyanAccent)
+                    color: (_speaking
+                            ? Colors.pinkAccent
+                            : Colors.cyanAccent)
                         .withOpacity(0.45),
                     blurRadius: 28,
                     spreadRadius: 6,
@@ -357,8 +459,12 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                   ? 'Suhana bol rahi hai...'
                   : _loading
                       ? 'Suhana soch rahi hai...'
-                      : 'Gemini • $_model',
+                      : _model.isEmpty
+                          ? 'Setup pending'
+                          : 'Gemini • $_model',
               style: const TextStyle(fontSize: 12, color: Colors.white54),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Expanded(
@@ -369,13 +475,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
               itemBuilder: (_, i) {
                 final m = _msgs[i];
                 return Align(
-                  alignment:
-                      m.me ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment: m.me
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     padding: const EdgeInsets.all(12),
                     constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.8),
+                        maxWidth:
+                            MediaQuery.of(context).size.width * 0.8),
                     decoration: BoxDecoration(
                       color: m.info
                           ? Colors.orange.withOpacity(0.12)
@@ -387,7 +495,8 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                     child: SelectableText(
                       m.text,
                       style: TextStyle(
-                        color: m.info ? Colors.orange.shade200 : Colors.white,
+                        color:
+                            m.info ? Colors.orange.shade200 : Colors.white,
                       ),
                     ),
                   ),
