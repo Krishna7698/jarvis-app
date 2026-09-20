@@ -1,18 +1,18 @@
 name: jarvis_assistant
 description: Suhana AI Assistant
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.3+4
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  http: 1.2.2
-  flutter_tts: 4.0.2
-  shared_preferences: 2.2.3
-  url_launcher: 6.2.6
+  url_launcher: ^6.1.11
+  http: ^1.2.0
+  flutter_tts: 3.8.5
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
