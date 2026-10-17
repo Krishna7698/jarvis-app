@@ -217,6 +217,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ]
       },
       'contents': contents,
+      'tools': [
+  {'google_search': {}},
+],
       'generationConfig': {
         'temperature': 0.7,
       },
