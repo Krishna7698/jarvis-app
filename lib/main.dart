@@ -52,16 +52,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<ChatMessage> _messages = [];
 
   String _apiKey = '';
-  String _model = 'gemini-2.5-flash';
+  String _model = 'gemini-3.8-flash';
 
   bool _isLoading = false;
   bool _isSpeaking = false;
 
   static const List<String> _models = [
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-2.5-pro',
-  ];
+  'gemini-3.8-flash',
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-pro',
+];
 
 
   static const String _systemPrompt =
@@ -117,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _apiKey = prefs.getString('gemini_api_key') ?? '';
-      _model = prefs.getString('gemini_model') ?? 'gemini-2.5-flash';
+      _model = prefs.getString('gemini_model') ?? 'gemini-3.8-flash';
     });
 
     if (_apiKey.isEmpty) {
@@ -432,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Recommended: gemini-2.5-flash',
+                  'Recommended: gemini-3.8-flash',
                   style: TextStyle(fontSize: 11, color: Colors.white54),
                 ),
               ],
