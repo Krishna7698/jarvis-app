@@ -248,27 +248,42 @@ class _HomeScreenState extends State<HomeScreen> {
         return text;
       }
 
+
+      final responseBody = utf8.decode(response.bodyBytes);
+      String apiErrorMessage = 'Detailed error unavailable.';
+
+      try {
+        final decoded = jsonDecode(responseBody);
+        if (decoded is Map) {
+          final error = decoded['error'];
+          if (error is Map && error['message'] is String) {
+            apiErrorMessage = error['message'] as String;
+          }
+        }
+      } catch (_) {}
+
       if (response.statusCode == 404) {
-        return '⚠️ Model "$_model" tumhari API key par available nahi hai. Settings me gemini-2.5-flash ya gemini-flash-latest select karo.';
+        return '⚠️ Model/API error (HTTP 404): $apiErrorMessage';
       }
 
       if (response.statusCode == 429) {
-        return '⚠️ Rate limit lag gayi. 30-60 second ruk ke phir message bhejo.';
+        return '⚠️ Rate limit ya quota issue (HTTP 429): $apiErrorMessage';
       }
 
       if (response.statusCode == 401 || response.statusCode == 403) {
-        return '⚠️ API key invalid ya permission issue hai. Nayi Gemini key daalo.';
+        return '⚠️ API key/permission issue (HTTP ${response.statusCode}): $apiErrorMessage';
       }
 
       if (response.statusCode == 500 || response.statusCode == 503) {
-        return '⚠️ Gemini server busy hai. 20-30 second baad try karo.';
+        return '⚠️ Gemini server error (HTTP ${response.statusCode}): $apiErrorMessage';
       }
 
-      return '⚠️ Error ${response.statusCode}.';
-    } catch (_) {
-      return '⚠️ Internet ya request issue. Dobara try karo.';
+      return '⚠️ Gemini API error (HTTP ${response.statusCode}): $apiErrorMessage';
+    } catch (e) {
+      return '⚠️ Request fail hui (${e.runtimeType}). Internet check karke try karo.';
     }
-  }
+    
+    }
 
   Future<void> _openUrl(String url, String successMessage) async {
     try {
