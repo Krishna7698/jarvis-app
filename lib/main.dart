@@ -260,9 +260,19 @@ class _HomeScreenState extends State<HomeScreen> {
         final decoded = jsonDecode(responseBody);
         if (decoded is Map) {
           final error = decoded['error'];
-          if (error is Map && error['message'] is String) {
-            apiErrorMessage = error['message'] as String;
-          }
+if (error is Map) {
+  if (error['message'] is String) {
+    apiErrorMessage = error['message'] as String;
+  }
+
+  if (error['status'] is String) {
+    apiErrorMessage += '\nStatus: ${error['status']}';
+  }
+
+  if (error['details'] != null) {
+    apiErrorMessage += '\nDetails: ${jsonEncode(error['details'])}';
+  }
+}
         }
       } catch (_) {}
 
