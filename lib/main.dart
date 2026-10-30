@@ -222,9 +222,6 @@ final lastMessages = historyMessages.length > 12
         ]
       },
       'contents': contents,
-      'tools': [
-  {'google_search': {}},
-],
       'generationConfig': {
         'temperature': 0.7,
       },
