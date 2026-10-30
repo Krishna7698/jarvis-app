@@ -179,8 +179,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Map<String, dynamic>> _buildHistory(String userText) {
     final nonInfo = _messages.where((m) => !m.isInfo).toList();
-    final lastMessages =
-        nonInfo.length > 12 ? nonInfo.sublist(nonInfo.length - 12) : nonInfo;
+final historyMessages = nonInfo.isNotEmpty
+    ? nonInfo.sublist(0, nonInfo.length - 1)
+    : <ChatMessage>[];
+
+final lastMessages = historyMessages.length > 12
+    ? historyMessages.sublist(historyMessages.length - 12)
+    : historyMessages;
 
     final contents = <Map<String, dynamic>>[];
 
