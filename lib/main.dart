@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
@@ -177,42 +179,62 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  List<Map<String, dynamic>> _buildHistory(String userText) {
-    final nonInfo = _messages.where((m) => !m.isInfo).toList();
-final historyMessages = nonInfo.isNotEmpty
-    ? nonInfo.sublist(0, nonInfo.length - 1)
-    : <ChatMessage>[];
+    List<Map<String, dynamic>> _buildHistory(String userText) {
+    final previousMessages =
+        _messages.where((m) => !m.isInfo).toList();
 
-final lastMessages = historyMessages.length > 12
-    ? historyMessages.sublist(historyMessages.length - 12)
-    : historyMessages;
+    if (previousMessages.isNotEmpty &&
+        previousMessages.last.isUser &&
+        previousMessages.last.text == userText) {
+      previousMessages.removeLast();
+    }
+
+    final recentMessages = previousMessages.length > 12
+        ? previousMessages.sublist(previousMessages.length - 12)
+        : previousMessages;
 
     final contents = <Map<String, dynamic>>[];
 
-    for (final msg in lastMessages) {
+    for (final msg in recentMessages) {
+      final role = msg.isUser ? 'user' : 'model';
+
+      if (contents.isNotEmpty && contents.last['role'] == role) {
+        final parts = contents.last['parts'] as List;
+        final lastPart = parts.last as Map<String, dynamic>;
+        lastPart['text'] =
+            '${lastPart['text']}\n${msg.text}';
+      } else {
+        contents.add({
+          'role': role,
+          'parts': [
+            {'text': msg.text}
+          ],
+        });
+      }
+    }
+
+    if (contents.isNotEmpty && contents.last['role'] == 'user') {
+      final parts = contents.last['parts'] as List;
+      final lastPart = parts.last as Map<String, dynamic>;
+      lastPart['text'] =
+          '${lastPart['text']}\n$userText';
+    } else {
       contents.add({
-        'role': msg.isUser ? 'user' : 'model',
+        'role': 'user',
         'parts': [
-          {'text': msg.text}
+          {'text': userText}
         ],
       });
     }
 
-    contents.add({
-      'role': 'user',
-      'parts': [
-        {'text': userText}
-      ],
-    });
-
     return contents;
-  }
+    }
 
-  Future<String> _callGemini(String userText) async {
+    Future<String> _callGemini(String userText) async {
     final contents = _buildHistory(userText);
 
     final uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$_apiKey',
+      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent',
     );
 
     final body = {
@@ -227,78 +249,108 @@ final lastMessages = historyMessages.length > 12
       },
     };
 
-    try {
-      final response = await http
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 45));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-        final candidates = data['candidates'] as List?;
-
-        if (candidates == null || candidates.isEmpty) {
-          return '⚠️ Gemini ne empty response diya. Dobara try karo.';
-        }
-
-        final parts = (candidates[0]['content']?['parts'] as List?) ?? [];
-        final text = parts.map((e) => '${e['text'] ?? ''}').join().trim();
-
-        if (text.isEmpty) {
-          return '⚠️ Blank response aaya. Dobara try karo.';
-        }
-
-        return text;
-      }
-
-
-      final responseBody = utf8.decode(response.bodyBytes);
-      String apiErrorMessage = 'Detailed error unavailable.';
-
+    for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        final decoded = jsonDecode(responseBody);
-        if (decoded is Map) {
-          final error = decoded['error'];
-if (error is Map) {
-  if (error['message'] is String) {
-    apiErrorMessage = error['message'] as String;
-  }
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': _apiKey,
+              },
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 120));
 
-  if (error['status'] is String) {
-    apiErrorMessage += '\nStatus: ${error['status']}';
-  }
+        if (response.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(response.bodyBytes));
+          final candidates = data['candidates'] as List?;
 
-  if (error['details'] != null) {
-    apiErrorMessage += '\nDetails: ${jsonEncode(error['details'])}';
-  }
-}
+          if (candidates == null || candidates.isEmpty) {
+            return '⚠️ Gemini ne empty response diya. Dobara try karo.';
+          }
+
+          final parts =
+              (candidates[0]['content']?['parts'] as List?) ?? [];
+
+          final answer = parts
+              .where((part) => part is Map && part['text'] is String)
+              .map((part) => part['text'] as String)
+              .join()
+              .trim();
+
+          if (answer.isEmpty) {
+            return '⚠️ Gemini ne text response nahi diya.';
+          }
+
+          return answer;
         }
-      } catch (_) {}
 
-      if (response.statusCode == 404) {
-        return '⚠️ Model/API error (HTTP 404): $apiErrorMessage';
+        var errorMessage = 'Detailed error unavailable.';
+
+        try {
+          final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+          if (decoded is Map && decoded['error'] is Map) {
+            final error = decoded['error'] as Map;
+
+            if (error['message'] is String) {
+              errorMessage = error['message'] as String;
+            }
+
+            if (error['status'] is String) {
+              errorMessage += '\nStatus: ${error['status']}';
+            }
+          }
+        } catch (_) {}
+
+        if (response.statusCode == 500 ||
+            response.statusCode == 503) {
+          if (attempt < 2) {
+            await Future.delayed(Duration(seconds: attempt + 1));
+            continue;
+          }
+
+          return '⚠️ Gemini server busy hai. Thodi der baad try karo. $errorMessage';
+        }
+
+        if (response.statusCode == 429) {
+          return '⚠️ Gemini quota/rate limit issue (HTTP 429): $errorMessage';
+        }
+
+        if (response.statusCode == 401 ||
+            response.statusCode == 403) {
+          return '⚠️ API key ya permission issue: $errorMessage';
+        }
+
+        if (response.statusCode == 404) {
+          return '⚠️ Model/API endpoint nahi mila: $errorMessage';
+        }
+
+        return '⚠️ Gemini API error (HTTP ${response.statusCode}): $errorMessage';
+
+      } on TimeoutException {
+        if (attempt < 2) {
+          await Future.delayed(Duration(seconds: attempt + 1));
+          continue;
+        }
+
+        return '⚠️ Gemini response mein bahut der lag rahi hai.';
+
+      } on SocketException {
+        if (attempt < 2) {
+          await Future.delayed(Duration(seconds: attempt + 1));
+          continue;
+        }
+
+        return '⚠️ Internet connection check karo.';
+
+      } catch (e) {
+        return '⚠️ Request fail hui (${e.runtimeType}).';
       }
-
-      if (response.statusCode == 429) {
-        return '⚠️ Rate limit ya quota issue (HTTP 429): $apiErrorMessage';
-      }
-
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        return '⚠️ API key/permission issue (HTTP ${response.statusCode}): $apiErrorMessage';
-      }
-
-      if (response.statusCode == 500 || response.statusCode == 503) {
-        return '⚠️ Gemini server error (HTTP ${response.statusCode}): $apiErrorMessage';
-      }
-
-      return '⚠️ Gemini API error (HTTP ${response.statusCode}): $apiErrorMessage';
-    } catch (e) {
-      return '⚠️ Request fail hui (${e.runtimeType}). Internet check karke try karo.';
     }
-    
+
+    return '⚠️ Gemini abhi respond nahi kar pa raha.';
     }
 
   Future<void> _openUrl(String url, String successMessage) async {
