@@ -346,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return '⚠️ Internet connection check karo.';
 
       } catch (e) {
-        return '⚠️ Request fail hui (${e.runtimeType}).';
+        return '⚠️ Request fail hui: $e';
       }
     }
 
