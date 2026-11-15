@@ -230,7 +230,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return contents;
     }
 
-    Future<String> _callGemini(String userText) async {
+    
+  Future<String> _callGemini(String userText) async {
     final contents = _buildHistory(userText);
 
     final uri = Uri.parse(
@@ -249,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     };
 
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final response = await http
             .post(
@@ -260,14 +261,14 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               body: jsonEncode(body),
             )
-            .timeout(const Duration(seconds: 120));
+            .timeout(const Duration(seconds: 45));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(utf8.decode(response.bodyBytes));
           final candidates = data['candidates'] as List?;
 
           if (candidates == null || candidates.isEmpty) {
-            return '⚠️ Gemini ne empty response diya. Dobara try karo.';
+            return '⚠️ Gemini ne empty response diya.';
           }
 
           final parts =
@@ -279,35 +280,26 @@ class _HomeScreenState extends State<HomeScreen> {
               .join()
               .trim();
 
-          if (answer.isEmpty) {
-            return '⚠️ Gemini ne text response nahi diya.';
-          }
-
-          return answer;
+          return answer.isEmpty
+              ? '⚠️ Gemini ne empty text response diya.'
+              : answer;
         }
 
-        var errorMessage = 'Detailed error unavailable.';
+        String errorMessage = 'Unknown API error';
 
         try {
           final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
           if (decoded is Map && decoded['error'] is Map) {
-            final error = decoded['error'] as Map;
-
-            if (error['message'] is String) {
-              errorMessage = error['message'] as String;
-            }
-
-            if (error['status'] is String) {
-              errorMessage += '\nStatus: ${error['status']}';
-            }
+            errorMessage =
+                decoded['error']['message']?.toString() ?? errorMessage;
           }
         } catch (_) {}
 
         if (response.statusCode == 500 ||
             response.statusCode == 503) {
-          if (attempt < 2) {
-            await Future.delayed(Duration(seconds: attempt + 1));
+          if (attempt == 0) {
+            await Future.delayed(const Duration(seconds: 1));
             continue;
           }
 
@@ -315,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         if (response.statusCode == 429) {
-          return '⚠️ Gemini quota/rate limit issue (HTTP 429): $errorMessage';
+          return '⚠️ Gemini quota/rate limit issue: $errorMessage';
         }
 
         if (response.statusCode == 401 ||
@@ -327,23 +319,31 @@ class _HomeScreenState extends State<HomeScreen> {
           return '⚠️ Model/API endpoint nahi mila: $errorMessage';
         }
 
-        return '⚠️ Gemini API error (HTTP ${response.statusCode}): $errorMessage';
+        return '⚠️ Gemini API error (${response.statusCode}): $errorMessage';
 
       } on TimeoutException {
-        if (attempt < 2) {
-          await Future.delayed(Duration(seconds: attempt + 1));
+        if (attempt == 0) {
+          await Future.delayed(const Duration(seconds: 1));
           continue;
         }
 
         return '⚠️ Gemini response mein bahut der lag rahi hai.';
 
       } on SocketException {
-        if (attempt < 2) {
-          await Future.delayed(Duration(seconds: attempt + 1));
+        if (attempt == 0) {
+          await Future.delayed(const Duration(seconds: 1));
           continue;
         }
 
         return '⚠️ Internet connection check karo.';
+
+      } on http.ClientException catch (e) {
+        if (attempt == 0) {
+          await Future.delayed(const Duration(seconds: 1));
+          continue;
+        }
+
+        return '⚠️ Network connection error: $e';
 
       } catch (e) {
         return '⚠️ Request fail hui: $e';
@@ -351,8 +351,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return '⚠️ Gemini abhi respond nahi kar pa raha.';
-    }
-
+  }
+  
   Future<void> _openUrl(String url, String successMessage) async {
     try {
       await launchUrl(
