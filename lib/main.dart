@@ -6,7 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'package:speech_to_text/speech_to_text.dart';
 void main() {
   runApp(const SuhanaApp());
 }
@@ -52,7 +52,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final FlutterTts _tts = FlutterTts();
 
   final List<ChatMessage> _messages = [];
+final SpeechToText _speech = SpeechToText();
 
+bool _speechAvailable = false;
+bool _isListening = false;
   String _apiKey = '';
   String _model = 'gemini-3.8-flash';
   String? _lastUsedModel;
