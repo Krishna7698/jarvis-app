@@ -55,15 +55,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _apiKey = '';
   String _model = 'gemini-3.8-flash';
-
+  String? _lastUsedModel;
   bool _isLoading = false;
   bool _isSpeaking = false;
 
   static const List<String> _models = [
   'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
-  'gemini-flash-latest',
-  'gemini-2.5-pro',
+  'gemini-3.1-flash-lite',
 ];
 
 
@@ -231,11 +230,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     
-  Future<String> _callGemini(String userText) async {
-    final contents = _buildHistory(userText);
+  
+Future<String> _callGemini(String userText) async {
+  final contents = _buildHistory(userText);
 
+  // Selected model first, then remaining models.
+  final modelsToTry = [
+    _model,
+    ..._models.where((m) => m != _model),
+  ];
+
+  String lastError = 'Gemini abhi respond nahi kar pa raha.';
+
+  for (final model in modelsToTry) {
     final uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
     );
 
     final body = {
@@ -280,9 +289,12 @@ class _HomeScreenState extends State<HomeScreen> {
               .join()
               .trim();
 
-          return answer.isEmpty
-              ? '⚠️ Gemini ne empty text response diya.'
-              : answer;
+          if (answer.isEmpty) {
+            return '⚠️ Gemini ne empty text response diya.';
+          }
+
+          _lastUsedModel = model;
+          return answer;
         }
 
         String errorMessage = 'Unknown API error';
@@ -296,62 +308,73 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         } catch (_) {}
 
-        if (response.statusCode == 500 ||
-            response.statusCode == 503) {
-          if (attempt == 0) {
-            await Future.delayed(const Duration(seconds: 1));
-            continue;
-          }
-
-          return '⚠️ Gemini server busy hai. Thodi der baad try karo. $errorMessage';
+        if (response.statusCode == 401 ||
+            response.statusCode == 403) {
+          return '⚠️ API key ya permission issue: $errorMessage';
         }
 
         if (response.statusCode == 429) {
           return '⚠️ Gemini quota/rate limit issue: $errorMessage';
         }
 
-        if (response.statusCode == 401 ||
-            response.statusCode == 403) {
-          return '⚠️ API key ya permission issue: $errorMessage';
+        if (response.statusCode == 500 ||
+            response.statusCode == 503) {
+          lastError = 'Gemini server busy hai: $errorMessage';
+
+          if (attempt == 0) {
+            await Future.delayed(const Duration(seconds: 1));
+            continue;
+          }
+
+          break;
         }
 
         if (response.statusCode == 404) {
-          return '⚠️ Model/API endpoint nahi mila: $errorMessage';
+          lastError = 'Model $model available nahi hai: $errorMessage';
+          break;
         }
 
         return '⚠️ Gemini API error (${response.statusCode}): $errorMessage';
 
       } on TimeoutException {
+        lastError = 'Model $model response mein bahut der laga raha hai.';
+
         if (attempt == 0) {
           await Future.delayed(const Duration(seconds: 1));
           continue;
         }
 
-        return '⚠️ Gemini response mein bahut der lag rahi hai.';
+        break;
 
       } on SocketException {
+        lastError = 'Internet connection check karo.';
+
         if (attempt == 0) {
           await Future.delayed(const Duration(seconds: 1));
           continue;
         }
 
-        return '⚠️ Internet connection check karo.';
+        break;
 
       } on http.ClientException catch (e) {
+        lastError = 'Network connection error: $e';
+
         if (attempt == 0) {
           await Future.delayed(const Duration(seconds: 1));
           continue;
         }
 
-        return '⚠️ Network connection error: $e';
+        break;
 
       } catch (e) {
         return '⚠️ Request fail hui: $e';
       }
     }
-
-    return '⚠️ Gemini abhi respond nahi kar pa raha.';
   }
+
+  return '⚠️ Sabhi available models fail ho gaye. $lastError';
+}
+  
   
   Future<void> _openUrl(String url, String successMessage) async {
     try {
