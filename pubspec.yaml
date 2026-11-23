@@ -13,7 +13,7 @@ dependencies:
   flutter_tts: 4.0.2
   shared_preferences: 2.2.3
   url_launcher: 6.2.6
-    speech_to_text: ^6.6.2
+  speech_to_text: ^6.6.2
 
 dev_dependencies:
   flutter_test:
