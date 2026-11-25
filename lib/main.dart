@@ -715,46 +715,45 @@ Future<String> _callGemini(String userText) async {
               padding: EdgeInsets.all(6),
               child: CircularProgressIndicator(color: Colors.cyanAccent),
             ),
+          
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 18),
-              child: Row(
-  children: [
-    Expanded(
-      child: TextField(
-        controller: _inputController,
-        textInputAction: TextInputAction.send,
-        decoration: InputDecoration(
-          hintText: 'Suhana se baat karo...',
-          filled: true,
-          fillColor: const Color(0xFF161B26),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(28),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        onSubmitted: (_) => _sendMessage(),
-      ),
-    ),
-    const SizedBox(width: 6),
-
-    IconButton(
-      onPressed: _toggleListening,
-      icon: Icon(
-        _isListening ? Icons.mic : Icons.mic_none,
-        color: _isListening ? Colors.red : Colors.cyanAccent,
-        size: 30,
-      ),
-    ),
-
-    CircleAvatar(
-      backgroundColor: Colors.cyanAccent,
-      child: IconButton(
-        icon: const Icon(Icons.send, color: Colors.black),
-        onPressed: () => _sendMessage(_inputController.text),
-      ),
-    ),
-  ],
-)
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _inputController,
+                    textInputAction: TextInputAction.send,
+                    decoration: InputDecoration(
+                      hintText: 'Suhana se baat karo...',
+                      filled: true,
+                      fillColor: const Color(0xFF161B26),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(28),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onSubmitted: (_) =>
+                        _sendMessage(_inputController.text),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: _toggleListening,
+                  icon: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: _isListening ? Colors.red : Colors.cyanAccent,
+                    size: 30,
+                  ),
+                ),
+                CircleAvatar(
+                  backgroundColor: Colors.cyanAccent,
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.black),
+                    onPressed: () =>
+                        _sendMessage(_inputController.text),
+                  ),
+                ),
               ],
             ),
           ),
@@ -763,3 +762,4 @@ Future<String> _callGemini(String userText) async {
     );
   }
 }
+
