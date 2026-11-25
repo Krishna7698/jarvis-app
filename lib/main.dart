@@ -101,7 +101,8 @@ bool _voiceProcessing = false;
     await _tts.setSpeechRate(0.48);
     await _tts.setPitch(1.12);
     await _tts.setVolume(1.0);
-
+    await _tts.awaitSpeakCompletion(true);
+    
     _tts.setStartHandler(() {
       if (mounted) {
         setState(() => _isSpeaking = true);
