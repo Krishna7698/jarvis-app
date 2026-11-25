@@ -717,7 +717,7 @@ Future<String> _callGemini(String userText) async {
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 18),
-            Row(
+              child: Row(
   children: [
     Expanded(
       child: TextField(
