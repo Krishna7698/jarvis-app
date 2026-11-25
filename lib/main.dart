@@ -83,6 +83,7 @@ bool _isListening = false;
   void initState() {
     super.initState();
     _setupTts();
+    _initSpeech();
     _loadSettings();
   }
 
@@ -161,7 +162,58 @@ bool _isListening = false;
     });
     _scrollToBottom();
   }
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (mounted && (status == 'done' || status == 'notListening')) {
+          setState(() => _isListening = false);
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() => _isListening = false);
+        }
+      },
+    );
 
+    if (mounted) {
+      setState(() => _speechAvailable = available);
+    }
+  }
+
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+
+    if (!_speechAvailable) {
+      await _initSpeech();
+    }
+
+    if (!_speechAvailable) {
+      _addInfoMessage('Microphone permission ya speech recognition check karo.');
+      return;
+    }
+
+    await _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() {
+          _inputController.text = result.recognizedWords;
+          _inputController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _inputController.text.length),
+          );
+        });
+      },
+      listenFor: const Duration(seconds: 45),
+      pauseFor: const Duration(seconds: 4),
+      partialResults: true,
+    );
+
+    if (mounted) setState(() => _isListening = true);
+  }
   Future<void> _speak(String text) async {
     if (text.startsWith('⚠️')) return;
 
@@ -665,32 +717,44 @@ Future<String> _callGemini(String userText) async {
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _inputController,
-                    textInputAction: TextInputAction.send,
-                    decoration: InputDecoration(
-                      hintText: 'Suhana se baat karo...',
-                      filled: true,
-                      fillColor: const Color(0xFF161B26),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(28),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onSubmitted: _sendMessage,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  backgroundColor: Colors.cyanAccent,
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.black),
-                    onPressed: () => _sendMessage(_inputController.text),
-                  ),
-                ),
+            Row(
+  children: [
+    Expanded(
+      child: TextField(
+        controller: _inputController,
+        textInputAction: TextInputAction.send,
+        decoration: InputDecoration(
+          hintText: 'Suhana se baat karo...',
+          filled: true,
+          fillColor: const Color(0xFF161B26),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(28),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onSubmitted: (_) => _sendMessage(),
+      ),
+    ),
+    const SizedBox(width: 6),
+
+    IconButton(
+      onPressed: _toggleListening,
+      icon: Icon(
+        _isListening ? Icons.mic : Icons.mic_none,
+        color: _isListening ? Colors.red : Colors.cyanAccent,
+        size: 30,
+      ),
+    ),
+
+    CircleAvatar(
+      backgroundColor: Colors.cyanAccent,
+      child: IconButton(
+        icon: const Icon(Icons.send, color: Colors.black),
+        onPressed: () => _sendMessage(_inputController.text),
+      ),
+    ),
+  ],
+)
               ],
             ),
           ),
