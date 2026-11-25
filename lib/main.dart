@@ -56,6 +56,8 @@ final SpeechToText _speech = SpeechToText();
 
 bool _speechAvailable = false;
 bool _isListening = false;
+bool _voiceMode = false;
+bool _voiceProcessing = false;
   String _apiKey = '';
   String _model = 'gemini-3.8-flash';
   String? _lastUsedModel;
@@ -182,37 +184,62 @@ bool _isListening = false;
   }
 
   Future<void> _toggleListening() async {
-    if (_isListening) {
-      await _speech.stop();
-      if (mounted) setState(() => _isListening = false);
-      return;
+  if (_isListening) {
+    _voiceMode = false;
+    await _speech.stop();
+    if (mounted) {
+      setState(() => _isListening = false);
     }
+    return;
+  }
 
-    if (!_speechAvailable) {
-      await _initSpeech();
-    }
+  if (!_speechAvailable) {
+    await _initSpeech();
+  }
 
-    if (!_speechAvailable) {
-      _addInfoMessage('Microphone permission ya speech recognition check karo.');
-      return;
-    }
+  if (!_speechAvailable) {
+    _addInfoMessage('Microphone permission ya speech recognition check karo.');
+    return;
+  }
 
-    await _speech.listen(
-      onResult: (result) {
-        if (!mounted) return;
-        setState(() {
-          _inputController.text = result.recognizedWords;
-          _inputController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _inputController.text.length),
-          );
+  _voiceMode = true;
+
+  await _speech.listen(
+    onResult: (result) {
+      if (!mounted) return;
+
+      final recognizedText = result.recognizedWords.trim();
+
+      setState(() {
+        _inputController.text = recognizedText;
+        _inputController.selection = TextSelection.fromPosition(
+          TextPosition(offset: recognizedText.length),
+        );
+      });
+
+      if (result.finalResult &&
+          _voiceMode &&
+          recognizedText.isNotEmpty &&
+          !_voiceProcessing) {
+        _voiceProcessing = true;
+        _speech.stop();
+        setState(() => _isListening = false);
+
+        _sendMessage(recognizedText).whenComplete(() {
+          if (mounted) {
+            setState(() => _voiceProcessing = false);
+          }
         });
-      },
-      listenFor: const Duration(seconds: 45),
-      pauseFor: const Duration(seconds: 4),
-      partialResults: true,
-    );
+      }
+    },
+    listenFor: const Duration(seconds: 45),
+    pauseFor: const Duration(seconds: 4),
+    partialResults: true,
+  );
 
-    if (mounted) setState(() => _isListening = true);
+  if (mounted) {
+    setState(() => _isListening = true);
+  }
   }
   Future<void> _speak(String text) async {
     if (text.startsWith('⚠️')) return;
@@ -524,6 +551,9 @@ Future<String> _callGemini(String userText) async {
 
     _scrollToBottom();
     await _speak(reply);
+    if (_voiceMode && mounted) {
+  await _toggleListening();
+    }
   }
 
   void _openSettings() {
